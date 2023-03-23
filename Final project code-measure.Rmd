@@ -1,0 +1,224 @@
+---
+title: "Final project"
+author: "Xinran Wang"
+date: ""
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(tinytex.verbose = TRUE)
+```
+
+```{r include=FALSE}
+library(tidyverse)
+library(haven)
+library(MVN)
+library(arm)
+library(lavaan)
+library(tidyLPA)
+library(poLCA)
+library(caret)
+```
+
+Read Data
+```{r}
+#tracker<-read_dta("C:/Users/Admin/Desktop/Michigan/Fall 2022/SURVMETH 687/Final project/HRSdata/trk2020tr_r.dta")
+#demographic<-read_sas("C:/Users/Admin/Desktop/Michigan/Fall 2022/SURVMETH 687/Final project/HRSdata/h20b_r.sas7bdat")
+#leavebehind<-read_sas("C:/Users/Admin/Desktop/Michigan/Fall 2022/SURVMETH 687/Final project/HRSdata/h20lb_r.sas7bdat")
+```
+
+Clean data
+```{r}
+#tracker<-tracker[,c(1,2,5,11,25)]
+#demographic<-demographic[,c('HHID','PN','RB063')]
+#leavebehind<-leavebehind[,c(1,2,76,431,260,512,513,35)]
+
+#data1<-left_join(demographic,tracker,by=c("HHID","PN"))
+#data1<-left_join(data1,leavebehind,by=c("HHID","PN"))
+
+#data<-data1[,-c(1,2)]
+```
+
+
+
+```{r}
+colnames(data)<-c('marital','highedu','gender','race','friend','work','bill','overwhelmed','stress','satisfied')
+
+data<-data[complete.cases(data), ]
+data<-data%>%
+  filter(marital!=2 & marital!=7 & marital!=8 & marital!=9 & race!=0 & race!=7 & highedu!=9)
+
+#recode variables
+#Marital status
+#1: No; 2: Yes
+data$marital<-ifelse(data$marital>1,1,2)
+
+#High edu
+data$highedu<-ifelse(data$highedu<4,1,2)
+#1: below bachelor, 2: bachelor and above
+
+#Friend
+data$friend<-ifelse(data$friend>2,1,2)
+
+#Work
+data$work<-ifelse(data$work>2,1,2)
+
+#Bill
+data$bill<-6-data$bill
+
+#Satisfied
+data$satisfied<-ifelse(data$satisfied<=4,1,2)
+#1: not satisfied, 2: satisfied
+```
+
+Write csv
+```{r}
+#write.csv(data,"C:/Users/Admin/Desktop/Michigan/Fall 2022/SURVMETH 687/Final project/HRSdata/data.csv")
+```
+
+
+```{r}
+data<-read.csv("data.csv")
+
+```
+
+```{r}
+library(questionr)
+round(prop.table(wtd.table(x = data$marital)), digits = 2)
+```
+```{r}
+library(janitor)
+data %>% tabyl(gender)
+data %>% 
+  count(marital)
+tabyl(data$gender)
+```
+
+Exploratory Analysis
+```{r}
+#Correlation
+data_cor<-data[,c(1:4)]
+cor(data_cor)
+```
+
+LCA
+```{r}
+set.seed(2)
+lca.fit1<-poLCA(cbind(friend,bill,overwhelmed,stress)~marital+highedu+race+gender+work,maxiter = 50000,nclass = 2,nrep=10,data=data)
+lca.fit2<-poLCA(cbind(friend,bill,overwhelmed,stress)~marital+highedu+race+gender+work,maxiter = 50000,nclass = 3,nrep=10,data=data)
+lca.fit3<-poLCA(cbind(friend,bill,overwhelmed,stress)~marital+highedu+race+gender+work,maxiter = 50000,nclass = 4,nrep=10,data=data)
+lca.fit4<-poLCA(cbind(friend,bill,overwhelmed,stress)~marital+highedu+race+gender+work,maxiter = 50000,nclass = 5,nrep=10,data=data)
+
+lca.fit1
+lca.fit2
+lca.fit3
+lca.fit4
+
+#2-classes vs 3-classes
+calc_lrt(3613, -13080.12, 25, 2, -12728.42, 40, 3)
+#3-classes vs 4-classes
+calc_lrt(3613, -12728.42, 40, 3,-12655.95, 55, 4)
+#4-classes vs 5-classes
+calc_lrt(3613, -12655.95, 55, 4,-13898.06,70,5)
+
+#Entropy statistics
+entropy<-function (p) sum(na.omit(-p*log(p)))
+#Two-class solution
+error_prior1 <- entropy(lca.fit1$P)
+error_post1 <- mean(apply(lca.fit1$posterior, 1, entropy))
+LCA_entropy1 <- (error_prior1 - error_post1) / error_prior1
+LCA_entropy1
+
+#Three-class solution
+error_prior2 <- entropy(lca.fit2$P)
+error_post2 <- mean(apply(lca.fit2$posterior, 1, entropy))
+LCA_entropy2 <- (error_prior2 - error_post2) / error_prior2
+LCA_entropy2
+
+#Four-class solution
+error_prior3 <- entropy(lca.fit3$P)
+error_post3 <- mean(apply(lca.fit3$posterior, 1, entropy))
+LCA_entropy3 <- (error_prior3 - error_post3) / error_prior3
+LCA_entropy3
+
+#Five-class solution
+error_prior4 <- entropy(lca.fit4$P)
+error_post4 <- mean(apply(lca.fit4$posterior, 1, entropy))
+LCA_entropy4 <- (error_prior4 - error_post4) / error_prior4
+LCA_entropy4
+
+#Sample-size adjusted BIC
+-2 * lca.fit1$llik + lca.fit1$npar * log((lca.fit1$N + 2) / 24)
+-2 * lca.fit2$llik + lca.fit2$npar * log((lca.fit2$N + 2) / 24)
+-2 * lca.fit3$llik + lca.fit3$npar * log((lca.fit3$N + 2) / 24)
+-2 * lca.fit4$llik + lca.fit4$npar * log((lca.fit4$N + 2) / 24)
+
+#Choose Model 2 with 3-class solution
+```
+```{r}
+lca.fit2$coeff
+```
+
+
+```{r}
+data(election)
+f.party <- cbind(friend,work,bill,overwhelmed,stress)~marital+highedu+race+gender
+nes.party <- poLCA(f.party,data,nclass=3)
+```
+```{r}
+f.party <- cbind(MORALG,CARESG,KNOWG,LEADG,DISHONG,INTELG,
+MORALB,CARESB,KNOWB,LEADB,DISHONB,INTELB)~PARTY
+nes.party <- poLCA(f.party,election,nclass=3)
+```
+
+```{r}
+pidmat <- cbind(1,c(1:2))
+exb <- exp(pidmat %*% nes.party$coeff[c(1,2),])
+matplot(c(1:2),(cbind(1,exb)/(1+rowSums(exb))),
+main="Party ID as a predictor of candidate affinity class",
+xlab="Party ID: strong Democratic (1) to strong Republican (7)",
+ylab="Probability of latent class membership",
+ylim=c(0,1),type="l",lwd=3,col=1)
+```
+
+Logistic Regression
+```{r}
+pred<-as.data.frame(lca.fit2$predclass)
+data_analysis<-cbind(data,pred)
+data_analysis$pred<-data_analysis$`lca.fit2$predclass`
+data_analysis<-data_analysis[,-c(12)]
+
+chisq.test(data_analysis$satisfied,data_analysis$pred)
+
+table(data_analysis$pred)
+#Set class 3 as the reference category
+data_analysis$pred <- relevel(as.factor(data_analysis$pred), ref = "3")
+
+mod1<-glm(satisfied~pred,data=data_analysis)
+summary(mod1)
+```
+
+
+```{r}
+data_analysis$satisfied<-ifelse(data_analysis$satisfied==2,1,0)
+data_analysis$satisfied<-as.factor(data$satisfied)
+# define training control
+train_control <- trainControl(method = "cv", number = 10)
+
+# train the model on training set
+model <- train(satisfied ~ pred,
+               data = data_analysis,
+               trControl = train_control,
+               method = "glm",
+               family=binomial())
+
+# print cv scores
+summary(model)
+
+#final model
+model$finalModel
+```
+
